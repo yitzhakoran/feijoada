@@ -405,43 +405,48 @@ function deleteCost(id){
 async function readReceiptPhoto(b64,mediaType){
   state.aiReading=true; state.aiError=false; render();
   const GEMINI_KEY="AIzaSyAzcGibHSDRctE5DP8zRtpYcz_iNAmHm94";
-  try{
-    const res=await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+GEMINI_KEY,
-      {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          contents:[{parts:[
-            {inline_data:{mime_type:mediaType,data:b64}},
-            {text:"Esta é uma foto de uma nota fiscal, recibo ou cupom de compra. Encontre o valor TOTAL a pagar (o valor final da compra, geralmente o maior, marcado como TOTAL, VALOR TOTAL ou TOTAL A PAGAR). Responda APENAS com o número, sem R$, sem texto, sem espaços. Use ponto como separador decimal. Exemplo: 47.90"}
-          ]}]
-        })
+  const MODELS=["gemini-1.5-pro","gemini-1.5-flash","gemini-1.5-pro-latest","gemini-pro-vision"];
+  for(const model of MODELS){
+    try{
+      const res=await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+GEMINI_KEY,
+        {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            contents:[{parts:[
+              {inline_data:{mime_type:mediaType,data:b64}},
+              {text:"Esta é uma foto de uma nota fiscal, recibo ou cupom. Encontre o valor TOTAL a pagar (valor final da compra). Responda APENAS com o número sem R$ sem texto. Use ponto decimal. Exemplo: 47.90"}
+            ]}]
+          })
+        }
+      );
+      const data=await res.json();
+      if(data.error){
+        // try next model
+        continue;
       }
-    );
-    const data=await res.json();
-    if(data.error){
-      state.aiError=true;
-      notify("Erro da IA: "+data.error.message,"err");
-    } else {
       const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
       const clean=text.trim().replace(",",".");
       const match=clean.match(/\d+\.?\d*/);
       if(match){
         const val=parseFloat(match[0]).toFixed(2);
         state.costValue=val;
+        state.aiError=false;
+        state.aiReading=false;
+        render();
         notify("✓ Valor lido: "+fmt(parseFloat(val)));
-      } else {
-        state.aiError=true;
-        notify("Não consegui ler o valor — confira e ajuste manualmente","err");
+        return;
       }
-    }
-  }catch(err){
-    state.aiError=true;
-    notify("Sem conexão — digite o valor manualmente","err");
+    }catch(err){ continue; }
   }
-  state.aiReading=false; render();
+  // all models failed
+  state.aiError=true;
+  state.aiReading=false;
+  render();
+  notify("Não consegui ler o valor — digite manualmente","err");
 }
+
 
 function handlePhotoInput(file){
   if(!file)return;
