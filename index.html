@@ -405,65 +405,42 @@ function deleteCost(id){
 // ── AI PHOTO READING ──────────────────────────────────────────────────────────
 async function readReceiptPhoto(b64,mediaType){
   state.aiReading=true; state.aiError=false; state.aiDebug=null; render();
-  const GEMINI_KEY="AIzaSyAzcGibHSDRctE5DP8zRtpYcz_iNAmHm94";
-  try{
-    const body={
-      contents:[{
-        role:"user",
-        parts:[
-          {inline_data:{mime_type:mediaType,data:b64}},
-          {text:"Você é um leitor de notas fiscais. Olhe esta imagem e me diga o valor TOTAL da compra. Procure por: TOTAL, TOTAL GERAL, VALOR TOTAL, TOTAL A PAGAR. Responda SOMENTE com o número. Nada mais. Sem R$. Sem texto. Apenas o número com ponto decimal. Exemplos de resposta correta: 47.90 ou 150.00 ou 89.50"}
-        ]
-      }],
-      generationConfig:{temperature:0,maxOutputTokens:20}
-    };
-    const res=await fetch(
-      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key="+GEMINI_KEY,
-      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}
-    );
-    const data=await res.json();
-    state.aiDebug=JSON.stringify(data).substring(0,300);
-
-    if(data.error){
-      state.aiError=true;
-      state.aiDebug="ERRO API: "+data.error.message;
-      state.aiReading=false; render();
-      notify("Erro da API: "+data.error.message,"err");
+  const KEY="AIzaSyAzcGibHSDRctE5DP8zRtpYcz_iNAmHm94";
+  const URLS=[
+    "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key="+KEY,
+    "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key="+KEY,
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key="+KEY,
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="+KEY,
+  ];
+  const body={contents:[{parts:[
+    {inline_data:{mime_type:mediaType,data:b64}},
+    {text:"Leia esta nota fiscal. Qual o valor TOTAL? Responda APENAS com o numero. Exemplo: 47.90"}
+  ]}],generationConfig:{temperature:0,maxOutputTokens:30}};
+  let debugLog=[];
+  for(const url of URLS){
+    try{
+      const model=url.split("/models/")[1].split(":")[0];
+      const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const data=await res.json();
+      if(data.error){debugLog.push(model+": "+data.error.message);continue;}
+      const text=(data.candidates?.[0]?.content?.parts?.[0]?.text||"").trim();
+      debugLog.push(model+": ["+text+"]");
+      state.aiDebug=debugLog.join(" | ");
+      const num=parseFloat(text.replace(/[^0-9.,]/g,"").replace(",","."));
+      if(!isNaN(num)&&num>0){
+        state.costValue=num.toFixed(2);
+        state.aiError=false;state.aiDebug=null;state.aiReading=false;render();
+        notify("Valor lido: "+fmt(num));
+        return;
+      }
+      state.aiError=true;state.aiReading=false;render();
+      notify("IA disse: "+text.substring(0,60),"err");
       return;
-    }
-
-    const text=(data.candidates?.[0]?.content?.parts?.[0]?.text||"").trim();
-    state.aiDebug="IA respondeu: ["+text+"]";
-
-    if(!text){
-      state.aiError=true;
-      state.aiReading=false; render();
-      notify("IA não retornou texto","err");
-      return;
-    }
-
-    // extract number - handle 47.90 / 47,90 / R$47,90 / 47
-    const cleaned=text.replace(/[^0-9.,]/g,"").replace(",",".");
-    const num=parseFloat(cleaned);
-    if(!isNaN(num) && num>0){
-      state.costValue=num.toFixed(2);
-      state.aiError=false;
-      state.aiDebug=null;
-      state.aiReading=false; render();
-      notify("✓ Valor lido: "+fmt(num));
-      return;
-    }
-
-    state.aiError=true;
-    state.aiReading=false; render();
-    notify("IA disse ["+text+"] — verifique e ajuste","err");
-
-  }catch(err){
-    state.aiError=true;
-    state.aiDebug="Exceção: "+err.message;
-    state.aiReading=false; render();
-    notify("Erro de conexão","err");
+    }catch(err){debugLog.push("excecao: "+err.message);}
   }
+  state.aiDebug=debugLog.join(" | ");
+  state.aiError=true;state.aiReading=false;render();
+  notify("Falhou — veja debug","err");
 }
 
 
