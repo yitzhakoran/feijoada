@@ -405,7 +405,7 @@ function deleteCost(id){
 // ── AI PHOTO READING ──────────────────────────────────────────────────────────
 async function readReceiptPhoto(b64,mediaType){
   state.aiReading=true; state.aiError=false; state.aiDebug=null; render();
-  const KEY="AIzaSyAzcGibHSDRctE5DP8zRtpYcz_iNAmHm94";
+  const KEY="AIzaSyDzlfGIdYs58Ko35AGXJSNt1HNvdeQT53w";
   const URLS=[
     "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key="+KEY,
     "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key="+KEY,
