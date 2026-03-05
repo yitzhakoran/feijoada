@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -416,7 +417,7 @@ async function readReceiptPhoto(b64,mediaType){
           body:JSON.stringify({
             contents:[{parts:[
               {inline_data:{mime_type:mediaType,data:b64}},
-              {text:"Esta é uma foto de uma nota fiscal, recibo ou cupom. Encontre o valor TOTAL a pagar (valor final da compra). Responda APENAS com o número sem R$ sem texto. Use ponto decimal. Exemplo: 47.90"}
+              {text:"Olhe esta imagem de nota fiscal ou cupom fiscal. Sua tarefa é encontrar o valor monetário TOTAL da compra (procure palavras como TOTAL, VALOR TOTAL, TOTAL A PAGAR, ou o maior valor em reais). Responda SOMENTE com o número, sem R$, sem texto, sem espaços. Use ponto como separador decimal. Se o valor for 47 reais e 90 centavos responda: 47.90 . Se for 150 reais responda: 150.00 . Se não conseguir ler responda: 0"}
             ]}]
           })
         }
@@ -427,17 +428,27 @@ async function readReceiptPhoto(b64,mediaType){
         continue;
       }
       const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
-      const clean=text.trim().replace(",",".");
-      const match=clean.match(/\d+\.?\d*/);
+      const clean=text.trim().replace(/\s/g,"").replace(",",".");
+      // match values like 47.90 or 47,90 or just 47
+      const match=clean.match(/(\d{1,6}[.,]\d{2})|(\d{1,6})/);
       if(match){
-        const val=parseFloat(match[0]).toFixed(2);
-        state.costValue=val;
-        state.aiError=false;
-        state.aiReading=false;
-        render();
-        notify("✓ Valor lido: "+fmt(parseFloat(val)));
-        return;
+        const raw=(match[1]||match[2]).replace(",",".");
+        const val=parseFloat(raw).toFixed(2);
+        if(parseFloat(val)>0){
+          state.costValue=val;
+          state.aiError=false;
+          state.aiReading=false;
+          render();
+          notify("✓ Valor lido: "+fmt(parseFloat(val)));
+          return;
+        }
       }
+      // got response but no number — show what AI said
+      state.aiError=true;
+      state.aiReading=false;
+      render();
+      notify("IA respondeu mas não encontrou valor numérico","err");
+      return;
     }catch(err){ continue; }
   }
   // all models failed
@@ -916,7 +927,7 @@ function renderCosts(){
   }
   if(state.aiError && !state.aiReading){
     photoWrap.appendChild(e("div",{style:"background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin-top:8px;font-size:13px;color:#dc2626;font-weight:500"},
-      "⚠️ Não foi possível ler automaticamente. Digite o valor no campo abaixo."
+      "⚠️ Não consegui ler o valor automaticamente. Verifique se a foto está nítida e o valor total visível, ou digite manualmente abaixo."
     ));
   }
   cf.appendChild(photoWrap);
