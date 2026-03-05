@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -265,6 +264,7 @@ let state = {
   costPhotoName: "",
   aiReading: false,
   aiError: false,
+  aiDebug: null,
 };
 
 // ── STORAGE ───────────────────────────────────────────────────────────────────
@@ -428,28 +428,31 @@ async function readReceiptPhoto(b64,mediaType){
         continue;
       }
       const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
-      const clean=text.trim().replace(/\s/g,"").replace(",",".");
-      // match values like 47.90 or 47,90 or just 47
-      const match=clean.match(/(\d{1,6}[.,]\d{2})|(\d{1,6})/);
+      // store raw response for debug
+      state.aiDebug=text;
+      const clean=text.trim().replace(",",".");
+      // try to find any number pattern: 47.90 / 47,90 / 47 / R$47,90
+      const match=clean.match(/(\d{1,6}[.,\.]\d{1,2})|(\d{1,6})/);
       if(match){
         const raw=(match[1]||match[2]).replace(",",".");
         const val=parseFloat(raw).toFixed(2);
         if(parseFloat(val)>0){
           state.costValue=val;
           state.aiError=false;
+          state.aiDebug=null;
           state.aiReading=false;
           render();
           notify("✓ Valor lido: "+fmt(parseFloat(val)));
           return;
         }
       }
-      // got response but no number — show what AI said
+      // show what AI actually said so user can type it
       state.aiError=true;
       state.aiReading=false;
       render();
-      notify("IA respondeu mas não encontrou valor numérico","err");
+      notify("IA respondeu: "+text.trim().substring(0,50),"err");
       return;
-    }catch(err){ continue; }
+    }catch(err){ state.aiDebug="Erro: "+err.message; continue; }
   }
   // all models failed
   state.aiError=true;
@@ -926,9 +929,16 @@ function renderCosts(){
     ));
   }
   if(state.aiError && !state.aiReading){
-    photoWrap.appendChild(e("div",{style:"background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin-top:8px;font-size:13px;color:#dc2626;font-weight:500"},
-      "⚠️ Não consegui ler o valor automaticamente. Verifique se a foto está nítida e o valor total visível, ou digite manualmente abaixo."
-    ));
+    const errBox=e("div",{style:"background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin-top:8px"});
+    errBox.appendChild(e("div",{style:"font-size:13px;color:#dc2626;font-weight:600;margin-bottom:6px"},"⚠️ Não consegui extrair o valor automaticamente."));
+    if(state.aiDebug){
+      errBox.appendChild(e("div",{style:"font-size:12px;color:#78716c;margin-bottom:4px"},"IA respondeu:"));
+      errBox.appendChild(e("div",{style:"font-size:13px;font-weight:700;color:#1c1917;background:#fff;border-radius:6px;padding:6px 10px;word-break:break-all"},state.aiDebug));
+      errBox.appendChild(e("div",{style:"font-size:12px;color:#78716c;margin-top:6px"},"Se aparecer um número acima, digite-o manualmente no campo Valor."));
+    } else {
+      errBox.appendChild(e("div",{style:"font-size:12px;color:#78716c"},"Digite o valor manualmente no campo abaixo."));
+    }
+    photoWrap.appendChild(errBox);
   }
   cf.appendChild(photoWrap);
 
