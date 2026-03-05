@@ -404,61 +404,66 @@ function deleteCost(id){
 
 // ── AI PHOTO READING ──────────────────────────────────────────────────────────
 async function readReceiptPhoto(b64,mediaType){
-  state.aiReading=true; state.aiError=false; render();
+  state.aiReading=true; state.aiError=false; state.aiDebug=null; render();
   const GEMINI_KEY="AIzaSyAzcGibHSDRctE5DP8zRtpYcz_iNAmHm94";
-  const MODELS=["gemini-1.5-pro","gemini-1.5-flash","gemini-1.5-pro-latest","gemini-pro-vision"];
-  for(const model of MODELS){
-    try{
-      const res=await fetch(
-        "https://generativelanguage.googleapis.com/v1/models/"+model+":generateContent?key="+GEMINI_KEY,
-        {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            contents:[{parts:[
-              {inline_data:{mime_type:mediaType,data:b64}},
-              {text:"Olhe esta imagem de nota fiscal ou cupom fiscal. Sua tarefa é encontrar o valor monetário TOTAL da compra (procure palavras como TOTAL, VALOR TOTAL, TOTAL A PAGAR, ou o maior valor em reais). Responda SOMENTE com o número, sem R$, sem texto, sem espaços. Use ponto como separador decimal. Se o valor for 47 reais e 90 centavos responda: 47.90 . Se for 150 reais responda: 150.00 . Se não conseguir ler responda: 0"}
-            ]}]
-          })
-        }
-      );
-      const data=await res.json();
-      if(data.error){
-        // try next model
-        continue;
-      }
-      const text=data.candidates?.[0]?.content?.parts?.[0]?.text||"";
-      // store raw response for debug
-      state.aiDebug=text;
-      const clean=text.trim().replace(",",".");
-      // try to find any number pattern: 47.90 / 47,90 / 47 / R$47,90
-      const match=clean.match(/(\d{1,6}[.,\.]\d{1,2})|(\d{1,6})/);
-      if(match){
-        const raw=(match[1]||match[2]).replace(",",".");
-        const val=parseFloat(raw).toFixed(2);
-        if(parseFloat(val)>0){
-          state.costValue=val;
-          state.aiError=false;
-          state.aiDebug=null;
-          state.aiReading=false;
-          render();
-          notify("✓ Valor lido: "+fmt(parseFloat(val)));
-          return;
-        }
-      }
-      // show what AI actually said so user can type it
+  try{
+    const body={
+      contents:[{
+        role:"user",
+        parts:[
+          {inline_data:{mime_type:mediaType,data:b64}},
+          {text:"Você é um leitor de notas fiscais. Olhe esta imagem e me diga o valor TOTAL da compra. Procure por: TOTAL, TOTAL GERAL, VALOR TOTAL, TOTAL A PAGAR. Responda SOMENTE com o número. Nada mais. Sem R$. Sem texto. Apenas o número com ponto decimal. Exemplos de resposta correta: 47.90 ou 150.00 ou 89.50"}
+        ]
+      }],
+      generationConfig:{temperature:0,maxOutputTokens:20}
+    };
+    const res=await fetch(
+      "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key="+GEMINI_KEY,
+      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}
+    );
+    const data=await res.json();
+    state.aiDebug=JSON.stringify(data).substring(0,300);
+
+    if(data.error){
       state.aiError=true;
-      state.aiReading=false;
-      render();
-      notify("IA respondeu: "+text.trim().substring(0,50),"err");
+      state.aiDebug="ERRO API: "+data.error.message;
+      state.aiReading=false; render();
+      notify("Erro da API: "+data.error.message,"err");
       return;
-    }catch(err){ state.aiDebug="Erro: "+err.message; continue; }
+    }
+
+    const text=(data.candidates?.[0]?.content?.parts?.[0]?.text||"").trim();
+    state.aiDebug="IA respondeu: ["+text+"]";
+
+    if(!text){
+      state.aiError=true;
+      state.aiReading=false; render();
+      notify("IA não retornou texto","err");
+      return;
+    }
+
+    // extract number - handle 47.90 / 47,90 / R$47,90 / 47
+    const cleaned=text.replace(/[^0-9.,]/g,"").replace(",",".");
+    const num=parseFloat(cleaned);
+    if(!isNaN(num) && num>0){
+      state.costValue=num.toFixed(2);
+      state.aiError=false;
+      state.aiDebug=null;
+      state.aiReading=false; render();
+      notify("✓ Valor lido: "+fmt(num));
+      return;
+    }
+
+    state.aiError=true;
+    state.aiReading=false; render();
+    notify("IA disse ["+text+"] — verifique e ajuste","err");
+
+  }catch(err){
+    state.aiError=true;
+    state.aiDebug="Exceção: "+err.message;
+    state.aiReading=false; render();
+    notify("Erro de conexão","err");
   }
-  // all models failed
-  state.aiError=true;
-  state.aiReading=false;
-  render();
-  notify("Não consegui ler o valor — digite manualmente","err");
 }
 
 
